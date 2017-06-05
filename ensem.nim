@@ -1,7 +1,7 @@
 ## Support for ensemble file format and arithmetic using jackknife/bootstrap propagation of errors.
 
 import
-  complex
+  complex, math
 
 type
   DataType_t = enum
@@ -9,16 +9,16 @@ type
     ComplexType = 1
 
   Ensemble_t* = object
-    data:      seq[complex]    # Data in either rescaled or raw format
+    data:      seq[Complex]    # Data in either rescaled or raw format
     typ:       DataType_t      # 0 if real and 1 if complex
     nbin:      int             # Number of bins, or data samples, configs, etc
     length:    int             # Number of time-slices of a prop
 
 
-proc MAX(x: cint; y: cint): cint =
+proc MAX(x: int; y: int): int =
   return if (x < y): y else: x
 
-proc MIN(x: cint; y: cint): cint =
+proc MIN(x: int; y: int): int =
   return if (x < y): x else: y
 
 
@@ -35,23 +35,23 @@ proc promote_type(src1: DataType_t; src2: DataType_t): DataType_t =
   elif src1 == ComplexType and src2 == ComplexType:
     result = ComplexType
   else:
-    quit(stderr, "some unknown types in concatenate")
+    quit("some unknown types in concatenate")
 
 
-proc rescale_factor(num: cint): cdouble =
+proc rescale_factor(num: int): cdouble =
   ## Return the proper rescaling factor 
   ## # Rescaling factor 
   when defined(JACKKNIFE):
-    result = - (num - 1)
+    result = -(num - 1)
   else:
-    result = sqrt(num - 1)
+    result = sqrt(cdouble(num - 1))
 
 
-proc malloc_ensemble(typ: DataType_t; nbin: cint; length: cint): Ensemble_t =
+proc malloc_ensemble(typ: DataType_t; nbin: int; length: int): Ensemble_t =
   ## Create a new ensemble of some given number of bins and length 
   if nbin <= 0 or length <= 0:
     quit("invalid input in malloc_ensemble")
-  result.data = newSeq[complex](nbin*length)
+  result.data = newSeq[Complex](nbin*length)
   if result.data == nil:
     quit("malloc returned NULL in malloc_ensemble")
   result.typ = typ
@@ -69,20 +69,20 @@ proc new_len1_ensemble(src: Ensemble_t): Ensemble_t =
   result = malloc_ensemble(src.typ, src.nbin, 1)
 
 
-proc promote_const_to_ensemble(dval: cdouble; nbin: cint; len: cint): Ensemble_t =
+proc promote_const_to_ensemble(dval: cdouble; nbin: int; len: int): Ensemble_t =
   ## Promote constant to ensemble 
   result = malloc_ensemble(RealType, nbin, len)
-  n:cint = 0
+  var n = 0
   while n < nbin:
-    k: cint = 0
+    var k = 0
     while k < len:
-      result.data[k + n * len].real = dval
-      result.data[k + n * len].imag = 0.0
+      result.data[k + n * len].re = dval
+      result.data[k + n * len].im = 0.0
       inc(k)
     inc(n)
 
 
-proc check_two_ensemble(src1: Ensemble_t; src2: Ensemble_t): cint =
+proc check_two_ensemble(src1: Ensemble_t; src2: Ensemble_t): int =
   ## # Check if two ensemble have the same parameters 
   if src1.nbin != src2.nbin:
     result = -1
@@ -99,29 +99,29 @@ proc check_two_ensemble(src1: Ensemble_t; src2: Ensemble_t): cint =
 proc rescale_ensemble(src: Ensemble_t; factor: cdouble): Ensemble_t =
   ## Return a new rescaled ensemble 
   result = new_ensemble(src)
-  var avg: complex_t
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var avg: Complex
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   k = 0
   while k < len:
-    avg.real = 0.0
-    avg.imag = 0.0
+    avg.re = 0.0
+    avg.im = 0.0
     n = 0
     while n < num:
-      inc(avg.real, src.data[k + len * n].real)
-      inc(avg.imag, src.data[k + len * n].imag)
+      avg.re += src.data[k + len * n].re
+      avg.im += src.data[k + len * n].im
       inc(n)
-    avg.real = avg.real / cast[cdouble](num)
-    avg.imag = avg.imag / cast[cdouble](num)
+    avg.re = avg.re / cast[cdouble](num)
+    avg.im = avg.im / cast[cdouble](num)
     n = 0
     while n < num:
-      result.data[k + len * n].real = avg.real +
-          (src.data[k + len * n].real - avg.real) * factor
-      result.data[k + len * n].imag = avg.imag +
-          (src.data[k + len * n].imag - avg.imag) * factor
+      result.data[k + len * n].re = avg.re +
+          (src.data[k + len * n].re - avg.re) * factor
+      result.data[k + len * n].im = avg.im +
+          (src.data[k + len * n].im - avg.im) * factor
       inc(n)
     inc(k)
 
@@ -129,32 +129,32 @@ proc rescale_ensemble(src: Ensemble_t; factor: cdouble): Ensemble_t =
 proc add_const_to_ensemble*(val: cdouble; src2: Ensemble_t): Ensemble_t =
   ## # Add constant on an ensemble 
   result = new_ensemble(src2)
-  var num: cint = src2.nbin
-  var len: cint = src2.length
+  var num: int = src2.nbin
+  var len: int = src2.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = val + src2.data[k + len * n].real
-      result.data[k + len * n].imag = src2.data[k + len * n].imag
+      result.data[k + len * n].re = val + src2.data[k + len * n].re
+      result.data[k + len * n].im = src2.data[k + len * n].im
       inc(n)
     inc(k)
 
 
 proc add_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Add two ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -171,25 +171,25 @@ proc add_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     k2 = MIN(k, len2 - 1)
     n = 0
     while n < num:
-      result.data[k + len * n].real = src1.data[k1 + len1 * n].real +
-          src2.data[k2 + len2 * n].real
-      result.data[k + len * n].imag = src1.data[k1 + len1 * n].imag +
-          src2.data[k2 + len2 * n].imag
+      result.data[k + len * n].re = src1.data[k1 + len1 * n].re +
+          src2.data[k2 + len2 * n].re
+      result.data[k + len * n].im = src1.data[k1 + len1 * n].im +
+          src2.data[k2 + len2 * n].im
       inc(n)
     inc(k)
 
 
 proc subtract_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Subtract two ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -206,10 +206,10 @@ proc subtract_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     k2 = MIN(k, len2 - 1)
     n = 0
     while n < num:
-      result.data[k + len * n].real = src1.data[k1 + len1 * n].real -
-          src2.data[k2 + len2 * n].real
-      result.data[k + len * n].imag = src1.data[k1 + len1 * n].imag -
-          src2.data[k2 + len2 * n].imag
+      result.data[k + len * n].re = src1.data[k1 + len1 * n].re -
+          src2.data[k2 + len2 * n].re
+      result.data[k + len * n].im = src1.data[k1 + len1 * n].im -
+          src2.data[k2 + len2 * n].im
       inc(n)
     inc(k)
 
@@ -217,32 +217,32 @@ proc subtract_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
 proc multiply_const_to_ensemble*(val: cdouble; src2: Ensemble_t): Ensemble_t =
   ## # Multiply a constant on an ensemble 
   result = new_ensemble(src2)
-  var num: cint = src2.nbin
-  var len: cint = src2.length
+  var num: int = src2.nbin
+  var len: int = src2.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = val * src2.data[k + len * n].real
-      result.data[k + len * n].imag = val * src2.data[k + len * n].imag
+      result.data[k + len * n].re = val * src2.data[k + len * n].re
+      result.data[k + len * n].im = val * src2.data[k + len * n].im
       inc(n)
     inc(k)
 
 
 proc multiply_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Multiply two ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -259,27 +259,27 @@ proc multiply_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     k2 = MIN(k, len2 - 1)
     n = 0
     while n < num:
-      result.data[k + len * n].real = src1.data[k1 + len1 * n].real *
-          src2.data[k2 + len2 * n].real -
-          src1.data[k1 + len1 * n].imag * src2.data[k2 + len2 * n].imag
-      result.data[k + len * n].imag = src1.data[k1 + len1 * n].real *
-          src2.data[k2 + len2 * n].imag +
-          src1.data[k1 + len1 * n].imag * src2.data[k2 + len2 * n].real
+      result.data[k + len * n].re = src1.data[k1 + len1 * n].re *
+          src2.data[k2 + len2 * n].re -
+          src1.data[k1 + len1 * n].im * src2.data[k2 + len2 * n].im
+      result.data[k + len * n].im = src1.data[k1 + len1 * n].re *
+          src2.data[k2 + len2 * n].im +
+          src1.data[k1 + len1 * n].im * src2.data[k2 + len2 * n].re
       inc(n)
     inc(k)
 
 
 proc divide_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Divide two ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -299,44 +299,44 @@ proc divide_two_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     of RealType:
       n = 0
       while n < num:
-        result.data[k + len * n].real = src1.data[k1 + len1 * n].real div
-            src2.data[k2 + len2 * n].real
-        result.data[k + len * n].imag = src1.data[k1 + len1 * n].imag div
-            src2.data[k2 + len2 * n].real
+        result.data[k + len * n].re = src1.data[k1 + len1 * n].re /
+            src2.data[k2 + len2 * n].re
+        result.data[k + len * n].im = src1.data[k1 + len1 * n].im /
+            src2.data[k2 + len2 * n].re
         inc(n)
     of ComplexType:
       n = 0
       while n < num:
         var denom: cdouble = 1.0 div
-            (src2.data[k2 + len2 * n].real * src2.data[k2 + len2 * n].real +
-            src2.data[k2 + len2 * n].imag * src2.data[k2 + len2 * n].imag)
-        result.data[k + len * n].real = (src1.data[k1 + len1 * n].real *
-            src2.data[k2 + len2 * n].real +
-            src1.data[k1 + len1 * n].imag * src2.data[k2 + len2 * n].imag) * denom
-        result.data[k + len * n].imag = (src1.data[k1 + len1 * n].imag *
-            src2.data[k2 + len2 * n].real -
-            src1.data[k1 + len1 * n].real * src2.data[k2 + len2 * n].imag) * denom
+            (src2.data[k2 + len2 * n].re * src2.data[k2 + len2 * n].re +
+            src2.data[k2 + len2 * n].im * src2.data[k2 + len2 * n].im)
+        result.data[k + len * n].re = (src1.data[k1 + len1 * n].re *
+            src2.data[k2 + len2 * n].re +
+            src1.data[k1 + len1 * n].im * src2.data[k2 + len2 * n].im) * denom
+        result.data[k + len * n].im = (src1.data[k1 + len1 * n].im *
+            src2.data[k2 + len2 * n].re -
+            src1.data[k1 + len1 * n].re * src2.data[k2 + len2 * n].im) * denom
         inc(n)
     else:
-      fprintf(stderr, "something wrong with src2 type: type=%d\x0A", src2.typ)
-      exit(1)
+      quit("something wrong with src2 type: type= " & $src2.typ)
+
     inc(k)
 
 
 proc negate_ensemble*(src: Ensemble_t): Ensemble_t =
   ## # Negate ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = - src.data[k + len * n].real
-      result.data[k + len * n].imag = - src.data[k + len * n].imag
+      result.data[k + len * n].re = - src.data[k + len * n].re
+      result.data[k + len * n].im = - src.data[k + len * n].im
       inc(n)
     inc(k)
 
@@ -344,18 +344,18 @@ proc negate_ensemble*(src: Ensemble_t): Ensemble_t =
 proc real_part_ensemble*(src: Ensemble_t): Ensemble_t =
   ## # Real part ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   result.typ = RealType
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = src.data[k + len * n].real
-      result.data[k + len * n].imag = 0.0
+      result.data[k + len * n].re = src.data[k + len * n].re
+      result.data[k + len * n].im = 0.0
       inc(n)
     inc(k)
 
@@ -363,18 +363,15 @@ proc real_part_ensemble*(src: Ensemble_t): Ensemble_t =
 proc imag_part_ensemble*(src: Ensemble_t): Ensemble_t =
   ## # Imag part ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
-  var
-    n: cint
-    k: cint
+  var num: int = src.nbin
+  var len: int = src.length
   result.typ = RealType
-  k = 0
+  var k = 0
   while k < len:
-    n = 0
+    var n = 0
     while n < num:
-      result.data[k + len * n].real = src.data[k + len * n].imag
-      result.data[k + len * n].imag = 0.0
+      result.data[k + len * n].re = src.data[k + len * n].im
+      result.data[k + len * n].im = 0.0
       inc(n)
     inc(k)
 
@@ -382,46 +379,43 @@ proc imag_part_ensemble*(src: Ensemble_t): Ensemble_t =
 proc conj_ensemble*(src: Ensemble_t): Ensemble_t = 
   ## # Conjugate the ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
-  var
-    n: cint
-    k: cint
+  var num: int = src.nbin
+  var len: int = src.length
+
   ## # Decide based on the input type 
   case src.typ
   of RealType:
     result.typ = RealType
-    k = 0
+    var k = 0
     while k < len:
-      n = 0
+      var n = 0
       while n < num:
-        result.data[k + len * n].real = src.data[k + len * n].real
-        result.data[k + len * n].imag = 0.0
+        result.data[k + len * n].re = src.data[k + len * n].re
+        result.data[k + len * n].im = 0.0
         inc(n)
       inc(k)
   of ComplexType:
     result.typ = ComplexType
-    k = 0
+    var k = 0
     while k < len:
-      n = 0
+      var n = 0
       while n < num:
-        result.data[k + len * n].real = src.data[k + len * n].real
-        result.data[k + len * n].imag = - src.data[k + len * n].imag
+        result.data[k + len * n].re = src.data[k + len * n].re
+        result.data[k + len * n].im = - src.data[k + len * n].im
         inc(n)
       inc(k)
   else:
-    fprintf(stderr, "something wrong with src type: type=%d\x0A", src.typ)
-    exit(1)
+    quit("something wrong with src type: type= " & $src.typ)
 
 
 proc norm2_ensemble*(src: Ensemble_t): Ensemble_t =
   ## # Norm2 the ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   ## # Decide based on the input type 
   case src.typ
   of RealType:
@@ -430,9 +424,9 @@ proc norm2_ensemble*(src: Ensemble_t): Ensemble_t =
     while k < len:
       n = 0
       while n < num:
-        var re: cdouble = src.data[k + len * n].real
-        result.data[k + len * n].real = re * re
-        result.data[k + len * n].imag = 0.0
+        var re: cdouble = src.data[k + len * n].re
+        result.data[k + len * n].re = re * re
+        result.data[k + len * n].im = 0.0
         inc(n)
       inc(k)
   of ComplexType:
@@ -441,10 +435,10 @@ proc norm2_ensemble*(src: Ensemble_t): Ensemble_t =
     while k < len:
       n = 0
       while n < num:
-        var re: cdouble = src.data[k + len * n].real
-        var im: cdouble = src.data[k + len * n].imag
-        result.data[k + len * n].real = re * re + im * im
-        result.data[k + len * n].imag = 0.0
+        var re: cdouble = src.data[k + len * n].re
+        var im: cdouble = src.data[k + len * n].im
+        result.data[k + len * n].re = re * re + im * im
+        result.data[k + len * n].im = 0.0
         inc(n)
       inc(k)
   else:
@@ -453,15 +447,15 @@ proc norm2_ensemble*(src: Ensemble_t): Ensemble_t =
 
 proc atan2_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Call atan2 on two real ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -481,24 +475,24 @@ proc atan2_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     k2 = MIN(k, len2 - 1)
     n = 0
     while n < num:
-      result.data[k + len * n].real = atan2(src1.data[k1 + len1 * n].real,
-                                   src2.data[k2 + len2 * n].real)
-      result.data[k + len * n].imag = 0.0
+      result.data[k + len * n].re = atan2(src1.data[k1 + len1 * n].re,
+                                   src2.data[k2 + len2 * n].re)
+      result.data[k + len * n].im = 0.0
       inc(n)
     inc(k)qu
 
 
 proc cmplx_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Build complex from two real ensembles 
-  var num: cint = src1.nbin
-  var len1: cint = src1.length
-  var len2: cint = src2.length
+  var num: int = src1.nbin
+  var len1: int = src1.length
+  var len2: int = src2.length
   var
-    len: cint
-    n: cint
-    k: cint
-    k1: cint
-    k2: cint
+    len: int
+    n: int
+    k: int
+    k1: int
+    k2: int
   case check_two_ensemble(src1, src2)
   of 0, 2:
     result = new_ensemble(src1)
@@ -518,8 +512,8 @@ proc cmplx_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     k2 = MIN(k, len2 - 1)
     n = 0
     while n < num:
-      result.data[k + len * n].real = src1.data[k1 + len1 * n].real
-      result.data[k + len * n].imag = src2.data[k2 + len2 * n].real
+      result.data[k + len * n].re = src1.data[k1 + len1 * n].re
+      result.data[k + len * n].im = src2.data[k2 + len2 * n].re
       inc(n)
     inc(k)
 
@@ -527,11 +521,11 @@ proc cmplx_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
 proc timesI_ensemble*(src: Ensemble_t): Ensemble_t =
   ## # Multiply ensemble by I 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   result.typ = ComplexType
   case src.typ
   of RealType:
@@ -539,8 +533,8 @@ proc timesI_ensemble*(src: Ensemble_t): Ensemble_t =
     while k < len:
       n = 0
       while n < num:
-        result.data[k + len * n].real = 0.0
-        result.data[k + len * n].imag = src.data[k + len * n].real
+        result.data[k + len * n].re = 0.0
+        result.data[k + len * n].im = src.data[k + len * n].re
         inc(n)
       inc(k)
   of ComplexType:
@@ -548,8 +542,8 @@ proc timesI_ensemble*(src: Ensemble_t): Ensemble_t =
     while k < len:
       n = 0
       while n < num:
-        result.data[k + len * n].real = - src.data[k + len * n].imag
-        result.data[k + len * n].imag = src.data[k + len * n].real
+        result.data[k + len * n].re = - src.data[k + len * n].im
+        result.data[k + len * n].im = src.data[k + len * n].re
         inc(n)
       inc(k)
   else:
@@ -558,15 +552,15 @@ proc timesI_ensemble*(src: Ensemble_t): Ensemble_t =
 
 proc read_fileptr_ensemble*(fp: ptr FILE; name: string): Ensemble_t =
   ## # Read ensemble 
-  var num: cint
-  var len: cint
+  var num: int
+  var len: int
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   var
-    junk: cint
-    ncol: cint
-    ttype: cint
+    junk: int
+    ncol: int
+    ttype: int
   var typ: DataType_t
   const
     MAXLINE = 1000
@@ -590,24 +584,24 @@ proc read_fileptr_ensemble*(fp: ptr FILE; name: string): Ensemble_t =
   result = malloc_ensemble(typ, num, len)
   n = 0
   while n < num:
-    var t: cint
+    var t: int
     case typ
     of RealType:
       k = 0
       while k < len:
-        if fscanf(fp, "%d %lf", addr(t), addr((result.data[k + len * n].real))) != 2:
+        if fscanf(fp, "%d %lf", addr(t), addr((result.data[k + len * n].re))) != 2:
           fprintf(stderr, "error reading data from %s\x0A", name)
           exit(1)
         if k != t:
           fprintf(stderr, "error reading time slice data from %s\x0A", name)
           exit(1)
-        result.data[k + len * n].imag = 0.0
+        result.data[k + len * n].im = 0.0
         inc(k)
     of ComplexType:
       k = 0
       while k < len:
-        if fscanf(fp, "%d %lf %lf", addr(t), addr((result.data[k + len * n].real)),
-                 addr((result.data[k + len * n].imag))) != 3:
+        if fscanf(fp, "%d %lf %lf", addr(t), addr((result.data[k + len * n].re)),
+                 addr((result.data[k + len * n].im))) != 3:
           fprintf(stderr, "error reading data from %s\x0A", name)
           exit(1)
         if k != t:
@@ -625,7 +619,7 @@ proc read_ensemble*(name: string): Ensemble_t =
   var fp: FILE
   fp = fopen(name, "r")
   if fp == nil:
-    fprintf(stderr, "file %s does not exist\x0A", name)
+    quit("file %s does not exist" & name)
     exit(1)
   result = read_fileptr_ensemble(fp, name)
   fclose(fp)
@@ -634,11 +628,11 @@ proc read_ensemble*(name: string): Ensemble_t =
 proc write_ensemble*(name: string; src: Ensemble_t) =
   ## # Write ensemble 
   var typ: DataType_t = src.typ
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   var fp: ptr FILE
   fp = fopen(name, "w")
   if fp == nil:
@@ -651,13 +645,13 @@ proc write_ensemble*(name: string; src: Ensemble_t) =
     of RealType:
       k = 0
       while k < len:
-        fprintf(fp, "%d %.12g\x0A", k, src.data[k + len * n].real)
+        fprintf(fp, "%d %.12g\x0A", k, src.data[k + len * n].re)
         inc(k)
     of ComplexType:
       k = 0
       while k < len:
-        fprintf(fp, "%d %.12g %.12g\x0A", k, src.data[k + len * n].real,
-                src.data[k + len * n].imag)
+        fprintf(fp, "%d %.12g %.12g\x0A", k, src.data[k + len * n].re,
+                src.data[k + len * n].im)
         inc(k)
     else:
       fprintf(stderr, "something wrong with ensemble: type=%d\x0A", typ)
@@ -669,19 +663,19 @@ proc write_ensemble*(name: string; src: Ensemble_t) =
 proc apply_func_ensemble(funcptr: proc (): cdouble; src: Ensemble_t): Ensemble_t =
   ## # Apply function to ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   if src.typ != RealType:
     quit("only func(real) not supported")
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = (funcptr)(src.data[k + len * n].real)
-      result.data[k + len * n].imag = 0.0
+      result.data[k + len * n].re = (funcptr)(src.data[k + len * n].re)
+      result.data[k + len * n].im = 0.0
       inc(n)
     inc(k)
 
@@ -689,19 +683,19 @@ proc apply_func_ensemble(funcptr: proc (): cdouble; src: Ensemble_t): Ensemble_t
 proc apply_pow_ensemble(src: Ensemble_t; val: cdouble): Ensemble_t =
   ## # Apply pow(src,const) to ensemble 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   if src.typ != RealType:
     quit("only func(real) not supported")
   k = 0
   while k < len:
     n = 0
     while n < num:
-      result.data[k + len * n].real = pow(src.data[k + len * n].real, val)
-      result.data[k + len * n].imag = 0.0
+      result.data[k + len * n].re = pow(src.data[k + len * n].re, val)
+      result.data[k + len * n].im = 0.0
       inc(n)
     inc(k)
 
@@ -712,14 +706,14 @@ proc calc_real_ensemble(src: Ensemble_t) =
   var err: cdouble
   var rat: cdouble
   var diff: cdouble
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   var fmt: ptr cstring = ["%d   %g %g   %g\x0A",
                      "%4d   %- 13.6g %- 13.6g   %- 13.6g\x0A"]
-  var dofmt: cint
+  var dofmt: int
   dofmt = if (len > 1): 1 else: 0
   k = 0
   while k < len:
@@ -727,12 +721,12 @@ proc calc_real_ensemble(src: Ensemble_t) =
     err = 0.0
     n = 0
     while n < num:
-      inc(avg, src.data[k + len * n].real)
+      inc(avg, src.data[k + len * n].re)
       inc(n)
     avg = avg / cast[cdouble](num)
     n = 0
     while n < num:
-      diff = (src.data[k + len * n].real - avg)
+      diff = (src.data[k + len * n].re - avg)
       inc(err, diff * diff)
       inc(n)
     err = sqrt(err div (double)((num - 1) * num))
@@ -744,37 +738,37 @@ proc calc_real_ensemble(src: Ensemble_t) =
 
 proc calc_complex_ensemble*(src: Ensemble_t) =
   ## # Calculate mean, err and err/mean for data 
-  var avg: complex_t
+  var avg: Complex
   var err: cdouble
-  var diff: complex_t
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var diff: Complex
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   var fmt: ptr cstring = ["%d   ( %g , %g )   %g\x0A",
                      "%4d   ( %- 13.6g , %- 13.6g )   %- 13.6g\x0A"]
-  var dofmt: cint
+  var dofmt: int
   dofmt = if (len > 1): 1 else: 0
   k = 0
   while k < len:
-    avg.real = avg.imag = 0.0
+    avg.re = avg.im = 0.0
     err = 0.0
     n = 0
     while n < num:
-      inc(avg.real, src.data[k + len * n].real)
-      inc(avg.imag, src.data[k + len * n].imag)
+      inc(avg.re, src.data[k + len * n].re)
+      inc(avg.im, src.data[k + len * n].im)
       inc(n)
-    avg.real = avg.real / cast[cdouble](num)
-    avg.imag = avg.imag / cast[cdouble](num)
+    avg.re = avg.re / cast[cdouble](num)
+    avg.im = avg.im / cast[cdouble](num)
     n = 0
     while n < num:
-      diff.real = (src.data[k + len * n].real - avg.real)
-      diff.imag = (src.data[k + len * n].imag - avg.imag)
-      inc(err, diff.real * diff.real + diff.imag * diff.imag)
+      diff.re = (src.data[k + len * n].re - avg.re)
+      diff.im = (src.data[k + len * n].im - avg.im)
+      inc(err, diff.re * diff.re + diff.im * diff.im)
       inc(n)
     err = sqrt(err div (double)((num - 1) * num))
-    printf(fmt[dofmt], k, avg.real, avg.imag, err)
+    printf(fmt[dofmt], k, avg.re, avg.im, err)
     inc(k)
 
 
@@ -793,11 +787,11 @@ proc calc_ensemble*(src: Ensemble_t) =
 proc print_ensemble*(src: Ensemble_t) =
   ## # Print the ensemble (maybe for a pipe??) 
   var typ: DataType_t = src.typ
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
+    n: int
+    k: int
   var fp: ptr FILE
   fp = stdout
   if fp == nil:
@@ -810,7 +804,7 @@ proc print_ensemble*(src: Ensemble_t) =
     while n < num:
       k = 0
       while k < len:
-        fprintf(fp, "%d %.12g\x0A", k, src.data[k + len * n].real)
+        fprintf(fp, "%d %.12g\x0A", k, src.data[k + len * n].re)
         inc(k)
       inc(n)
   of ComplexType:
@@ -818,8 +812,8 @@ proc print_ensemble*(src: Ensemble_t) =
     while n < num:
       k = 0
       while k < len:
-        fprintf(fp, "%d %.12g %.12g\x0A", k, src.data[k + len * n].real,
-                src.data[k + len * n].imag)
+        fprintf(fp, "%d %.12g %.12g\x0A", k, src.data[k + len * n].re,
+                src.data[k + len * n].im)
         inc(k)
       inc(n)
   else:
@@ -827,15 +821,15 @@ proc print_ensemble*(src: Ensemble_t) =
     exit(1)
 
 
-proc shift_ensemble*(src: Ensemble_t; sh: cint): Ensemble_t =
+proc shift_ensemble*(src: Ensemble_t; sh: int): Ensemble_t =
   ## # Shift an ensemble in some direction dropping bits from the end 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
-    kk: cint
+    n: int
+    k: int
+    kk: int
   if abs(sh) > len:
     fprintf(stderr, "shift: do not allow the shift greater than the length\x0A")
     exit(1)
@@ -844,54 +838,54 @@ proc shift_ensemble*(src: Ensemble_t; sh: cint): Ensemble_t =
     k = 0
     while k < len:
       kk = (k + len + sh) mod len
-      result.data[k + len * n].real = src.data[kk + len * n].real
-      result.data[k + len * n].imag = src.data[kk + len * n].imag
+      result.data[k + len * n].re = src.data[kk + len * n].re
+      result.data[k + len * n].im = src.data[kk + len * n].im
       inc(k)
     ## # Clean out the ends 
     if sh > 0:
       k = len - sh
       while k < len:
-        result.data[k + len * n].real = 0.0
-        result.data[k + len * n].imag = 0.0
+        result.data[k + len * n].re = 0.0
+        result.data[k + len * n].im = 0.0
         inc(k)
     elif sh < 0:
       k = 0
       while k < - sh:
-        result.data[k + len * n].real = 0.0
-        result.data[k + len * n].imag = 0.0
+        result.data[k + len * n].re = 0.0
+        result.data[k + len * n].im = 0.0
         inc(k)
     inc(n)
 
 
-proc cshift_ensemble*(src: Ensemble_t; sh: cint): Ensemble_t =
+proc cshift_ensemble*(src: Ensemble_t; sh: int): Ensemble_t =
   ## # Periodic (circular) shift an ensemble in some direction 
   result = new_ensemble(src)
-  var num: cint = src.nbin
-  var len: cint = src.length
+  var num: int = src.nbin
+  var len: int = src.length
   var
-    n: cint
-    k: cint
-    kk: cint
+    n: int
+    k: int
+    kk: int
   n = 0
   while n < num:
     k = 0
     while k < len:
       kk = (k + len + sh) mod len
-      result.data[k + len * n].real = src.data[kk + len * n].real
-      result.data[k + len * n].imag = src.data[kk + len * n].imag
+      result.data[k + len * n].re = src.data[kk + len * n].re
+      result.data[k + len * n].im = src.data[kk + len * n].im
       inc(k)
     inc(n)
 
 
-proc extract_ensemble*(src: Ensemble_t; elem_i: cint; elem_f: cint): Ensemble_t =
+proc extract_ensemble*(src: Ensemble_t; elem_i: int; elem_f: int): Ensemble_t =
   ## # Extract a range of time slices from an ensemble 
   result.typ = src.typ
-  var num: cint = src.nbin
-  var len: cint = src.length
-  var dlen: cint = elem_f - elem_i
+  var num: int = src.nbin
+  var len: int = src.length
+  var dlen: int = elem_f - elem_i
   var
-    k: cint
-    n: cint
+    k: int
+    n: int
   if elem_i < 0 or elem_i >= len:
     fprintf(stderr, "index element out of bounds of ensemble: %d\x0A", elem_i)
     exit(1)
@@ -908,8 +902,8 @@ proc extract_ensemble*(src: Ensemble_t; elem_i: cint; elem_f: cint): Ensemble_t 
   while n < num:
     k = 0
     while k < dlen:
-      result.data[k + dlen * n].real = src.data[k + elem_i + len * n].real
-      result.data[k + dlen * n].imag = src.data[k + elem_i + len * n].imag
+      result.data[k + dlen * n].re = src.data[k + elem_i + len * n].re
+      result.data[k + dlen * n].im = src.data[k + elem_i + len * n].im
       inc(k)
     inc(n)
 
@@ -917,11 +911,11 @@ proc extract_ensemble*(src: Ensemble_t; elem_i: cint; elem_f: cint): Ensemble_t 
 proc concatenate_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## # Concatenate two ensembles 
   var
-    k: cint
-    n: cint
+    k: int
+    n: int
   var
-    len: cint
-    num: cint
+    len: int
+    num: int
   var typ: DataType_t
   if src1.nbin != src2.nbin:
     quit("Ensembles not compatible for concatenation")
@@ -934,12 +928,12 @@ proc concatenate_ensemble*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   while n < num:
     k = 0
     while k < src1.length:
-      result.data[k + n * len].real = src1.data[k + n * src1.length].real
-      result.data[k + n * len].imag = src1.data[k + n * src1.length].imag
+      result.data[k + n * len].re = src1.data[k + n * src1.length].re
+      result.data[k + n * len].im = src1.data[k + n * src1.length].im
       inc(k)
     k = 0
     while k < src2.length:
-      result.data[k + src1.length + n * len].real = src2.data[k + n * src2.length].real
-      result.data[k + src1.length + n * len].imag = src2.data[k + n * src2.length].imag
+      result.data[k + src1.length + n * len].re = src2.data[k + n * src2.length].re
+      result.data[k + src1.length + n * len].im = src2.data[k + n * src2.length].im
       inc(k)
     inc(n)
