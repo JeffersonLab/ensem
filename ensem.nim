@@ -192,8 +192,8 @@ proc `$`*(z: CalcType_t): string =
     while k < Lt:
       let avg = z.data[k].avg
       let err = z.data[k].err
-      var re = formatEng(avg.re, precision=12, trim= false)
-      var im = formatEng(avg.im, precision=12, trim= false)
+      var re = formatEng(avg.re, precision=12, trim= true)
+      var im = formatEng(avg.im, precision=12, trim= true)
       result &= $k & "   ( " & re & " , " & im & " )   " & $err & "\n"
       inc(k)
 
@@ -218,8 +218,8 @@ proc `$`*(src: Ensemble_t): string =
   of ComplexType:
     for n in 0..num-1:
       for k in 0..Lt-1:   
-        var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=false)
-        var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=false)
+        var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=true)
+        var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=true)
         result &= $k & " " & re & " " & im & "\n"
 
   else:
