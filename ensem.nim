@@ -1,7 +1,7 @@
 ## Support for ensemble file format and arithmetic using jackknife/bootstrap propagation of errors.
 
 import
-  complex, math, streams, parseutils, strutils
+  complex, math, system, streams, parseutils, strutils
 
 type
   DataType_t* = enum
@@ -11,6 +11,12 @@ type
   EnsemType_t* = enum
     EnsemJackknife = 10,
     EnsemBootstrap = 11
+
+  CalcDataType_t* = tuple[avg: Complex, err: float]
+
+  CalcType_t* = object
+    data:        seq[CalcDataType_t]
+    typ:         DataType_t      # 0 if real and 1 if complex
 
   Ensemble_t* = object
     data:        seq[Complex]    # Data in either rescaled or raw format
@@ -30,12 +36,23 @@ proc MIN(x: int; y: int): int =
   return if (x < y): x else: y
 
 
+proc newCalcType*(typ: DataType_t; Lt: int): CalcType_t =
+  ## Create a new calc object of length `Lt`
+  result.typ  = typ
+  result.data = newSeq[CalcDataType_t](Lt)
+
+
+proc dataType*(src: CalcType_t): DataType_t = 
+  ## Get the data-type
+  result = src.typ
+
+
 proc numElem*(src: Ensemble_t): int = 
   ## Get the time-extent
   result = src.Lt
 
 
-proc size*(src: Ensemble_t): int = 
+proc numBins*(src: Ensemble_t): int = 
   ## Get the number of bins
   result = src.nbin
 
@@ -101,32 +118,115 @@ proc newEnsemble*(src: Ensemble_t): Ensemble_t =
   result = newEnsemble(EnsemJackknife, src.typ, src.nbin, src.Lt)
 
 
-proc newRealEnsemble*(val: float; nbin: int; len: int): Ensemble_t =
+proc newEnsemble*(val: float; nbin: int; Lt: int): Ensemble_t =
   ## Promote constant to ensemble 
-  result = newEnsemble(RealType, nbin, len)
+  result = newEnsemble(RealType, nbin, Lt)
   var n = 0
   while n < nbin:
     var k = 0
-    while k < len:
-      result.data[k + n * len].re = val
-      result.data[k + n * len].im = 0.0
+    while k < Lt:
+      result.data[k + n * Lt].re = val
+      result.data[k + n * Lt].im = 0.0
       inc(k)
     inc(n)
 
 
-proc newComplexEnsemble*(val: Complex; nbin: int; len: int): Ensemble_t =
+proc newEnsemble*(val: Complex; nbin: int; Lt: int): Ensemble_t =
   ## Promote constant to ensemble 
-  result = newEnsemble(ComplexType, nbin, len)
+  result = newEnsemble(ComplexType, nbin, Lt)
   var n = 0
   while n < nbin:
     var k = 0
-    while k < len:
-      result.data[k + n * len] = val
+    while k < Lt:
+      result.data[k + n * Lt] = val
       inc(k)
     inc(n)
 
 
-proc check_two_ensemble(src1: Ensemble_t; src2: Ensemble_t): int =
+proc newEnsemble*(val: seq[float]; nbin: int): Ensemble_t =
+  ## Promote a sequence of numbers to an ensemble 
+  let Lt = val.len
+  result = newEnsemble(RealType, nbin, Lt)
+  var n = 0
+  while n < nbin:
+    var k = 0
+    while k < Lt:
+      result.data[k + n * Lt].re = val[k]
+      result.data[k + n * Lt].im = 0.0
+      inc(k)
+    inc(n)
+
+
+proc newEnsemble*(val: seq[Complex]; nbin: int): Ensemble_t =
+  ## Promote a sequence of numbers to an ensemble 
+  let Lt = val.len
+  result = newEnsemble(ComplexType, nbin, Lt)
+  var n = 0
+  while n < nbin:
+    var k = 0
+    while k < Lt:
+      result.data[k + n * Lt] = val[k]
+      inc(k)
+    inc(n)
+
+
+proc `$`*(z: CalcType_t): string = 
+  ## Returns a nice string representation for a calc-ed object
+  result = ""
+  let Lt = z.data.len
+  if z.typ == RealType:
+    var k = 0
+    while k < Lt:
+      let avg = z.data[k].avg
+      let err = z.data[k].err
+      if avg.re != 0.0:
+        let rat = err / avg.re
+        result &= $k & "   " & $avg.re & " " & $err & "   " & $rat & "\n"
+      else:
+        result &= $k & "   " & $avg.re & " " & $err & "   " & "\n"
+      inc(k)
+
+  if z.typ == ComplexType:
+    var k = 0
+    while k < Lt:
+      let avg = z.data[k].avg
+      let err = z.data[k].err
+      var re = formatEng(avg.re, precision=12, trim= false)
+      var im = formatEng(avg.im, precision=12, trim= false)
+      result &= $k & "   ( " & re & " , " & im & " )   " & $err & "\n"
+      inc(k)
+
+  else:
+    quit("something wrong with calc type= " & $z.typ)
+
+
+proc `$`*(src: Ensemble_t): string =
+  ## Print the ensemble into a string
+  var typ = src.typ
+  var num = src.nbin
+  var Lt  = src.Lt
+
+  result = $num & " " & $Lt & " " & $int(typ) & " 0 1" & "\n"
+  case typ
+  of RealType:
+    for n in 0..num-1:
+      for k in 0..Lt-1:
+        var re = formatEng(src.data[k + Lt * n].re, precision=12)
+        result &= $k & " " & re & "\n"
+
+  of ComplexType:
+    for n in 0..num-1:
+      for k in 0..Lt-1:   
+        var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=false)
+        var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=false)
+        result &= $k & " " & re & " " & im & "\n"
+
+  else:
+    quit("something wrong with ensemble: type= " & $typ)
+
+
+
+proc check_two_ensemble(src1, src2: Ensemble_t): int =
   ## Check if two ensemble have the same parameters 
   if src1.nbin != src2.nbin:
     result = -1
@@ -138,6 +238,16 @@ proc check_two_ensemble(src1: Ensemble_t; src2: Ensemble_t): int =
     result = 2
   else:
     result = -1
+
+
+proc `=~`*(src1, src2: Ensemble_t): bool =
+  ## Compare two ensembles `src1` and `src2` approximately
+  result = true
+  if check_two_ensemble(src1, src2) != 0: return false
+  let num = src1.nbin * src1.Lt
+  for j in 0..num-1:
+    var foo: bool = (src1.data[j] =~ src1.data[j])
+    result = result and foo
 
 
 proc rescale_ensemble(src: Ensemble_t; factor: float): Ensemble_t =
@@ -380,6 +490,20 @@ proc `-`*(src: Ensemble_t): Ensemble_t =
       result.data[k + Lt * n] = - src.data[k + Lt * n]
 
 
+proc replicate*(src: Ensemble_t; num: int): Ensemble_t =
+  ## Replicate a src `num` times
+  let N  = src.nbin * num
+  let Lt = src.Lt
+  result = newEnsemble(src.dataType, N, Lt)
+  var j = 0
+  while j < N:
+    var n = 0
+    while n < src.nbin*Lt:
+      result.data[j] = src.data[n]
+      inc(n)
+      inc(j)
+
+
 proc real*(src: Ensemble_t): Ensemble_t =
   ## Real part ensemble 
   result = newEnsemble(src)
@@ -551,13 +675,12 @@ proc readEnsemble*(name: string): Ensemble_t =
     typ: DataType_t
 
   # Slurp in the entire contents of the file
-  var fs = newFileStream(name, fmRead)
-  
+  var fs = newStringStream(readFile(name))
   if isNil(fs):
     quit("Error opening file = " & name)
 
-  var line: string
-  if not fs.readLine(line):
+  var line = fs.readLine()
+  if line == "":
     quit("Some error reading header in file = " & name)
   else:
     let ll = splitWhiteSpace(line)
@@ -630,36 +753,9 @@ proc readEnsemble*(name: string): Ensemble_t =
   fs.close()
 
 
-proc writeEnsemble*(name: string; src: Ensemble_t) =
+proc writeEnsemble*(src: Ensemble_t; name: string) =
   ## Write ensemble 
-  var typ: DataType_t = src.typ
-  var num = src.nbin
-  var Lt  = src.Lt
-  var
-    n: int
-    k: int
-  var fp: FILE
-  if not open(fp, name):
-    quit("error opening file " & name)
-
-  writeLine(fp, num, Lt, typ, "0 1")
-  n = 0
-  while n < num:
-    case typ
-    of RealType:
-      k = 0
-      while k < Lt:
-        writeLine(fp, k, src.data[k + Lt * n].re)
-        inc(k)
-    of ComplexType:
-      k = 0
-      while k < Lt:
-        writeLine(fp, k, src.data[k + Lt * n].re, src.data[k + Lt * n].im)
-        inc(k)
-    else:
-      quit("something wrong with ensemble: type= " & $typ)
-    inc(n)
-  close(fp)
+  writeFile(name, $src)
 
 
 #
@@ -683,65 +779,50 @@ proc writeEnsemble*(name: string; src: Ensemble_t) =
 #    inc(k)
 #
 
-proc apply_pow_ensemble(src: Ensemble_t; val: float): Ensemble_t =
+proc pow*(src: Ensemble_t; val: float): Ensemble_t =
   ## Apply pow(src,const) to ensemble 
   result = newEnsemble(src)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
-  var
-    n: int
-    k: int
   if src.typ != RealType:
     quit("only func(real) not supported")
-  k = 0
-  while k < Lt:
-    n = 0
-    while n < num:
-      result.data[k + Lt * n].re = pow(src.data[k + Lt * n].re, val)
-      result.data[k + Lt * n].im = 0.0
-      inc(n)
-    inc(k)
 
+  for j in 0..src.data.len-1:
+    result.data[j].re = pow(src.data[j].re, val)
+    result.data[j].im = 0.0
+ 
 
-proc calc_real_ensemble(src: Ensemble_t) =
+proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
-  var avg: float
-  var err: float
-  var rat: float
-  var diff: float
+  result = newCalcType(RealType, src.Lt)
   var num: int = src.nbin
   var Lt:  int = src.Lt
-#  let fmt = ["%d   %g %g   %g", "%4d   %- 13.6g %- 13.6g   %- 13.6g"]
-#  var dofmt: int
-#  dofmt = if (Lt > 1): 1 else: 0
+
   for k in 0..Lt-1:
-    avg = 0.0
-    err = 0.0
+    var avg = 0.0
+    var err = 0.0
     for n in 0..num-1:
       avg += src.data[k + Lt * n].re
 
     avg /= float(num)
     for n in 0..num-1:
-      diff = (src.data[k + Lt * n].re - avg)
+      let diff = (src.data[k + Lt * n].re - avg)
       err += diff * diff
 
     err = sqrt(err / float((num - 1) * num))
-    if avg != 0.0: rat = err / avg
-    else: rat = 0.0
-    echo k, "   ", avg, " ", err, "   ", rat
+    result.data[k] = ((avg,0.0), err)
+#    if avg != 0.0: rat = err / avg
+#    else: rat = 0.0
+#    echo k, "   ", avg, " ", err, "   ", rat
 
 
-proc calc_complex_ensemble(src: Ensemble_t) =
+
+proc calc_complex_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
-  var avg: Complex
-  var err: float
-  var diff: Complex
+  result = newCalcType(ComplexType, src.Lt)
   var num: int = src.nbin
   var Lt:  int = src.Lt
-#  var fmt: ptr cstring = ["%d   ( %g , %g )   %g",
-#                     "%4d   ( %- 13.6g , %- 13.6g )   %- 13.6g"]
-#  var dofmt: int
-#  dofmt = if (Lt > 1): 1 else: 0
+  var avg: Complex
+  var err: float
+
   for k in 0..Lt-1:
     avg = (0.0, 0.0)
     err = 0.0
@@ -750,48 +831,22 @@ proc calc_complex_ensemble(src: Ensemble_t) =
 
     avg /= float(num)
     for n in 0..num-1:
-      diff = src.data[k + Lt * n] - avg
+      let diff = src.data[k + Lt * n] - avg
       err += norm2(diff)
 
     err = sqrt(err / float((num - 1) * num));
-    echo k, "   (", avg.re, " , ", avg.im, ")   ", err;
+    result.data[k] = (avg, err)
 
 
-proc calc*(src: Ensemble_t) =
+proc calc*(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
   case src.typ
   of RealType:
-    calc_real_ensemble(src)
+    result = calc_real_ensemble(src)
   of ComplexType:
-    calc_complex_ensemble(src)
+    result = calc_complex_ensemble(src)
   else:
     quit("something wrong with ensemble: type= " & $src.typ)
-
-
-proc print*(src: Ensemble_t) =
-  ## Print the ensemble (maybe for a pipe??) 
-  var typ: DataType_t = src.typ
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
-
-#  writeLine(fp, "%d %d %d 0 1", num, Lt, typ)
-#  writeLine(stdout, "%d %d %d 0 1", num, Lt, typ)
-  echo num, " ", Lt, " ", int(typ), " ", 0, " ", 1
-  case typ
-  of RealType:
-    for n in 0..num-1:
-      for k in 0..Lt-1:
-#        writeLine(stdout, "%d %.12g", k, src.data[k + Lt * n].re)
-        echo k, " ", src.data[k + Lt * n].re
-
-  of ComplexType:
-    for n in 0..num-1:
-      for k in 0..Lt-1:
-#        writeLine(stdout, "%d %.12g %.12g", k, src.data[k + Lt * n].re, src.data[k + Lt * n].im)
-        echo k, " ", src.data[k + Lt * n].re, " ", src.data[k + Lt * n].im
-
-  else:
-    quit("something wrong with ensemble: type= " & $typ)
 
 
 proc shift*(src: Ensemble_t; sh: int): Ensemble_t =
@@ -914,20 +969,37 @@ proc concatenate*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
 
 #--------------------------------------------------------------------------
 when isMainModule:
-  let src1 = newRealEnsemble(5.0, 3, 4)
-  let src2 = newRealEnsemble(17.0, 3, 4)
-  let src3 = newComplexEnsemble((5.0,7.3), 3, 4)
+  let Lt   = 4
+  let nbin = 3
+  let src2 = newEnsemble(17.0, nbin, Lt)
+  let src3 = newEnsemble((5.0,7.3), nbin, Lt)
 
-#  echo "src1:"
-#  print(src1)
+  # Build a list in time
+  var t = newSeq[float](Lt)
+  for i in 0..Lt-1:
+    t[i] = float(i)
+
+  let src1 = newEnsemble(t, nbin)
+
+#[
+  echo "src1:"
+  echo src1
   echo "src2:"
-  print(src2)
+  echo src2
   echo "src3:"
-  print(src3)
+  echo src3
+]#
 
-  var fred = src3 * src2
+  var fred = src3 * src1
   echo "fred:"
-  print(fred)
+  echo fred
 
   echo "calc(fred):"
-  calc(fred)
+  echo calc(fred)
+
+  writeEnsemble(fred, "fred.dat")
+  echo "\n\nNow try to read"
+  let foo = readEnsemble("fred.dat")
+  echo "foo:"
+  echo foo
+  assert(foo =~ fred)
