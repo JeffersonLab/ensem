@@ -175,7 +175,8 @@ proc `$`*(z: CalcType_t): string =
   ## Returns a nice string representation for a calc-ed object
   result = ""
   let Lt = z.data.len
-  if z.typ == RealType:
+  case z.typ
+  of RealType:
     var k = 0
     while k < Lt:
       let avg = z.data[k].avg
@@ -187,13 +188,13 @@ proc `$`*(z: CalcType_t): string =
         result &= $k & "   " & $avg.re & " " & $err & "   " & "\n"
       inc(k)
 
-  if z.typ == ComplexType:
+  of ComplexType:
     var k = 0
     while k < Lt:
       let avg = z.data[k].avg
       let err = z.data[k].err
-      var re = formatEng(avg.re, precision=12, trim= false)
-      var im = formatEng(avg.im, precision=12, trim= false)
+      var re = formatEng(avg.re, precision=12, trim= true)
+      var im = formatEng(avg.im, precision=12, trim= true)
       result &= $k & "   ( " & re & " , " & im & " )   " & $err & "\n"
       inc(k)
 
@@ -218,8 +219,8 @@ proc `$`*(src: Ensemble_t): string =
   of ComplexType:
     for n in 0..num-1:
       for k in 0..Lt-1:   
-        var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=false)
-        var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=false)
+        var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=true)
+        var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=true)
         result &= $k & " " & re & " " & im & "\n"
 
   else:
@@ -761,22 +762,34 @@ proc writeEnsemble*(src: Ensemble_t; name: string) =
 
 
 
-proc apply_func_ensemble(funcptr: proc (x: float): float; src: Ensemble_t): Ensemble_t =
+proc apply_func_ensemble(funcptr: proc (x: float): float; srca: Ensemble_t): Ensemble_t =
   ## Apply function to ensemble 
-  result = newEnsemble(src)
+  let src = rescaleEnsemDown(srca)
+  var dest = newEnsemble(src)
   let num = src.nbin * src.Lt
   if src.typ != RealType:
     quit("only func(real) not supported")
   var j = 0
   while j < num:
-    result.data[j].re = funcptr(src.data[j].re)
-    result.data[j].im = 0.0
+    dest.data[j].re = funcptr(src.data[j].re)
+    dest.data[j].im = 0.0
     inc(j)
+  result = rescaleEnsemUp(dest)
+
+
+proc log*(src: Ensemble_t): Ensemble_t =
+  ## exp an ensemble
+  result = apply_func_ensemble(math.ln, src)
+
+
+proc log10*(src: Ensemble_t): Ensemble_t =
+  ## exp an ensemble
+  result = apply_func_ensemble(math.log10, src)
 
 
 proc exp*(src: Ensemble_t): Ensemble_t =
   ## exp an ensemble
-  result = apply_func_ensemble(exp, src)
+  result = apply_func_ensemble(math.exp, src)
 
 
 proc sqrt*(src: Ensemble_t): Ensemble_t =
@@ -784,16 +797,63 @@ proc sqrt*(src: Ensemble_t): Ensemble_t =
   result = apply_func_ensemble(math.sqrt, src)
 
 
-proc pow*(src: Ensemble_t; val: SomeNumber): Ensemble_t =
+proc cos*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.cos, src)
+
+
+proc sin*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.sin, src)
+
+
+proc tan*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.tan, src)
+
+
+proc acos*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.arccos, src)
+
+
+proc asin*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.arcsin, src)
+
+
+proc atan*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.arctan, src)
+
+
+proc cosh*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.cosh, src)
+
+
+proc sinh*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.sinh, src)
+
+
+proc tanh*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.tanh, src)
+
+
+proc pow*(srca: Ensemble_t; val: SomeNumber): Ensemble_t =
   ## Apply pow(src,const) to ensemble 
-  result = newEnsemble(src)
+  let src = rescaleEnsemDown(srca)
+  var dest = newEnsemble(src)
   let v  = float64(val)
   if src.typ != RealType:
     quit("only func(real) not supported")
 
   for j in 0..src.data.len-1:
-    result.data[j].re = pow(src.data[j].re, val)
-    result.data[j].im = 0.0
+    dest.data[j].re = pow(src.data[j].re, v)
+    dest.data[j].im = 0.0
+  result = rescaleEnsemUp(dest)
  
 
 proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
@@ -801,24 +861,22 @@ proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
   result  = newCalcType(RealType, src.Lt)
   let num = src.nbin
   let Lt  = src.Lt
+  var avg: float
+  var err: float
 
   for k in 0..Lt-1:
-    var avg = 0.0
-    var err = 0.0
+    avg = 0.0
+    err = 0.0
     for n in 0..num-1:
       avg += src.data[k + Lt * n].re
 
     avg /= float(num)
     for n in 0..num-1:
-      let diff = (src.data[k + Lt * n].re - avg)
+      let diff = src.data[k + Lt * n].re - avg
       err += diff * diff
 
     err = sqrt(err / float((num - 1) * num))
     result.data[k] = ((avg,0.0), err)
-#    if avg != 0.0: rat = err / avg
-#    else: rat = 0.0
-#    echo k, "   ", avg, " ", err, "   ", rat
-
 
 
 proc calc_complex_ensemble(src: Ensemble_t): CalcType_t =
@@ -1005,8 +1063,8 @@ when isMainModule:
   echo "fred:"
   echo fred
 
-  echo "calc(fred):"
-  echo calc(fred)
+  echo "calc(src2):"
+  echo calc(src2)
 
   writeEnsemble(fred, "fred.dat")
   echo "\n\nNow try to read"
