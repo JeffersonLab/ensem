@@ -15,15 +15,15 @@ type
   CalcDataType_t* = tuple[avg: Complex, err: float]
 
   CalcType_t* = object
-    data:        seq[CalcDataType_t]
-    typ:         DataType_t      # 0 if real and 1 if complex
+    data*:       seq[CalcDataType_t]
+    typ*:        DataType_t      ## 0 if real and 1 if complex
 
   Ensemble_t* = object
-    data:        seq[Complex]    # Data in either rescaled or raw format
-    typ:         DataType_t      # 0 if real and 1 if complex
-    nbin:        int             # Number of bins, or data samples, configs, etc
-    Lt:          int             # Number of time-slices of a prop
-#    ens:         EnsemType_t     # Type of fluctuations for the ensemble
+    data:        seq[Complex]    ## Data in either rescaled or raw format
+    typ:         DataType_t      ## 0 if real and 1 if complex
+    nbin:        int             ## Number of bins, or data samples, configs, etc
+    Lt:          int             ## Number of time-slices of a prop
+#    ens:         EnsemType_t    ## Type of fluctuations for the ensemble
 
 
 proc norm2(x: Complex): float =
@@ -118,14 +118,15 @@ proc newEnsemble*(src: Ensemble_t): Ensemble_t =
   result = newEnsemble(EnsemJackknife, src.typ, src.nbin, src.Lt)
 
 
-proc newEnsemble*(val: float; nbin: int; Lt: int): Ensemble_t =
+proc newEnsemble*(val: SomeNumber; nbin: int; Lt: int): Ensemble_t =
   ## Promote constant to ensemble 
   result = newEnsemble(RealType, nbin, Lt)
+  let v = float64(val)
   var n = 0
   while n < nbin:
     var k = 0
     while k < Lt:
-      result.data[k + n * Lt].re = val
+      result.data[k + n * Lt].re = v
       result.data[k + n * Lt].im = 0.0
       inc(k)
     inc(n)
@@ -143,7 +144,7 @@ proc newEnsemble*(val: Complex; nbin: int; Lt: int): Ensemble_t =
     inc(n)
 
 
-proc newEnsemble*(val: seq[float]; nbin: int): Ensemble_t =
+proc newEnsemble*(val: seq[SomeNumber]; nbin: int): Ensemble_t =
   ## Promote a sequence of numbers to an ensemble 
   let Lt = val.len
   result = newEnsemble(RealType, nbin, Lt)
@@ -151,7 +152,7 @@ proc newEnsemble*(val: seq[float]; nbin: int): Ensemble_t =
   while n < nbin:
     var k = 0
     while k < Lt:
-      result.data[k + n * Lt].re = val[k]
+      result.data[k + n * Lt].re = float64(val[k])
       result.data[k + n * Lt].im = 0.0
       inc(k)
     inc(n)
@@ -202,9 +203,9 @@ proc `$`*(z: CalcType_t): string =
 
 proc `$`*(src: Ensemble_t): string =
   ## Print the ensemble into a string
-  var typ = src.typ
-  var num = src.nbin
-  var Lt  = src.Lt
+  let typ = src.typ
+  let num = src.nbin
+  let Lt  = src.Lt
 
   result = $num & " " & $Lt & " " & $int(typ) & " 0 1" & "\n"
   case typ
@@ -246,16 +247,16 @@ proc `=~`*(src1, src2: Ensemble_t): bool =
   if check_two_ensemble(src1, src2) != 0: return false
   let num = src1.nbin * src1.Lt
   for j in 0..num-1:
-    var foo: bool = (src1.data[j] =~ src1.data[j])
+    let foo: bool = (src1.data[j] =~ src1.data[j])
     result = result and foo
 
 
 proc rescale_ensemble(src: Ensemble_t; factor: float): Ensemble_t =
   ## Return a new rescaled ensemble 
   result = newEnsemble(src)
+  let num = src.nbin
+  let Lt  = src.Lt
   var avg: Complex
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
 
   for k in 0..Lt-1:
     avg = (0.0, 0.0)
@@ -278,25 +279,26 @@ proc rescaleEnsemDown(src: Ensemble_t): Ensemble_t =
   
 
 
-proc `+`*(val: float; src2: Ensemble_t): Ensemble_t =
+proc `+`*(val: SomeNumber; src2: Ensemble_t): Ensemble_t =
   ## Add constant on an ensemble 
   result = newEnsemble(src2)
-  var Lt:  int = src2.Lt
+  let v  = float64(val)
+  let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
-      result.data[k + Lt * n] = val + src2.data[k + Lt * n]
+      result.data[k + Lt * n] = v + src2.data[k + Lt * n]
 
 
 proc `+`*(val: Complex; src2: Ensemble_t): Ensemble_t =
   ## Add constant on an ensemble 
   result = newEnsemble(src2)
-  var Lt:  int = src2.Lt
+  let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
       result.data[k + Lt * n] = val + src2.data[k + Lt * n]
 
 
-proc `+`*(src1: Ensemble_t; val: float): Ensemble_t =
+proc `+`*(src1: Ensemble_t; val: SomeNumber): Ensemble_t =
   ## Add constant on an ensemble 
   result = val + src1
 
@@ -308,9 +310,9 @@ proc `+`*(src1: Ensemble_t; val: Complex): Ensemble_t =
 
 proc `+`*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## Add two ensembles 
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
 
   case check_two_ensemble(src1, src2)
   of 0, 2:
@@ -321,19 +323,19 @@ proc `+`*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     quit("ensembles not compatible")
 
   result.typ = promote_type(src1.typ, src2.typ)
-  var Lt = MAX(Lt1, Lt2)
+  let Lt = MAX(Lt1, Lt2)
   for k in 0..Lt-1:
-    var k1 = MIN(k, Lt1 - 1)
-    var k2 = MIN(k, Lt2 - 1)
+    let k1 = MIN(k, Lt1 - 1)
+    let k2 = MIN(k, Lt2 - 1)
     for n in 0..num-1:
       result.data[k + Lt * n] = src1.data[k1 + Lt1 * n] + src2.data[k2 + Lt2 * n]
 
 
 proc `-`*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## Subtract two ensembles 
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
   var
     Lt: int
     n: int
@@ -361,25 +363,26 @@ proc `-`*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     inc(k)
 
 
-proc `*`*(val: float; src2: Ensemble_t): Ensemble_t =
+proc `*`*(val: SomeNumber; src2: Ensemble_t): Ensemble_t =
   ## Multiply a constant on an ensemble 
   result = newEnsemble(src2)
-  var Lt:  int = src2.Lt
+  let v  = float64(val)
+  let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
-      result.data[k + Lt * n] = val * src2.data[k + Lt * n]
+      result.data[k + Lt * n] = v * src2.data[k + Lt * n]
 
 
 proc `*`*(val: Complex; src2: Ensemble_t): Ensemble_t =
   ## Multiply a constant on an ensemble 
   result = newEnsemble(src2)
-  var Lt:  int = src2.Lt
+  let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
       result.data[k + Lt * n] = val * src2.data[k + Lt * n]
 
 
-proc `*`*(src1: Ensemble_t; val: float): Ensemble_t =
+proc `*`*(src1: Ensemble_t; val: SomeNumber): Ensemble_t =
   ## Multiply a constant on an ensemble 
   result = val * src1
 
@@ -396,9 +399,9 @@ proc `*`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
   let src2 = rescaleEnsemDown(src2a)
 
   var dest: Ensemble_t
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
   var
     Lt: int
     n: int
@@ -435,9 +438,9 @@ proc `/`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
   let src2 = rescaleEnsemDown(src2a)
 
   var dest: Ensemble_t
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
 
   case check_two_ensemble(src1, src2)
   of 0, 2:
@@ -448,11 +451,11 @@ proc `/`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
     quit("add: ensembles not compatible")
 
   dest.typ = promote_type(src1.typ, src2.typ)
-  var Lt = MAX(Lt1, Lt2)
+  let Lt = MAX(Lt1, Lt2)
 
   for k in 0..Lt-1:
-    var k1 = MIN(k, Lt1 - 1)
-    var k2 = MIN(k, Lt2 - 1)
+    let k1 = MIN(k, Lt1 - 1)
+    let k2 = MIN(k, Lt2 - 1)
     ## For efficiency, split into real and complex 
     case src2.typ
     of RealType:
@@ -464,7 +467,7 @@ proc `/`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
 
     of ComplexType:
       for n in 0..num-1:
-        var denom: float = 1.0 /
+        let denom: float = 1.0 /
             (src2.data[k2 + Lt2 * n].re * src2.data[k2 + Lt2 * n].re +
             src2.data[k2 + Lt2 * n].im * src2.data[k2 + Lt2 * n].im)
         dest.data[k + Lt * n].re = (src1.data[k1 + Lt1 * n].re *
@@ -484,7 +487,7 @@ proc `/`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
 proc `-`*(src: Ensemble_t): Ensemble_t =
   ## Negate ensemble 
   result = newEnsemble(src)
-  var Lt:  int = src.Lt
+  let Lt = src.Lt
   for k in 0..Lt-1:
     for n in 0..src.nbin-1:
       result.data[k + Lt * n] = - src.data[k + Lt * n]
@@ -507,7 +510,7 @@ proc replicate*(src: Ensemble_t; num: int): Ensemble_t =
 proc real*(src: Ensemble_t): Ensemble_t =
   ## Real part ensemble 
   result = newEnsemble(src)
-  var Lt:  int = src.Lt
+  let Lt = src.Lt
   result.typ = RealType
   for k in 0..Lt-1:
     for n in 0..src.nbin-1:
@@ -518,7 +521,7 @@ proc real*(src: Ensemble_t): Ensemble_t =
 proc imag*(src: Ensemble_t): Ensemble_t =
   ## Imag part ensemble 
   result = newEnsemble(src)
-  var Lt:  int = src.Lt
+  let Lt = src.Lt
   result.typ = RealType
   for k in 0..Lt-1:
     for n in 0..src.nbin-1:
@@ -529,7 +532,7 @@ proc imag*(src: Ensemble_t): Ensemble_t =
 proc conjugate*(src: Ensemble_t): Ensemble_t = 
   ## Conjugate the ensemble 
   result = newEnsemble(src)
-  var Lt:  int = src.Lt
+  let Lt = src.Lt
 
   ## Decide based on the input type 
   case src.typ
@@ -554,9 +557,8 @@ proc conjugate*(src: Ensemble_t): Ensemble_t =
 proc norm2*(srca: Ensemble_t): Ensemble_t =
   ## Norm2 the ensemble 
   let src = rescaleEnsemDown(srca)
-
   var dest = newEnsemble(src)
-  var Lt:  int = src.Lt
+  let Lt   = src.Lt
 
   ## Decide based on the input type 
   case src.typ
@@ -564,7 +566,7 @@ proc norm2*(srca: Ensemble_t): Ensemble_t =
     dest.typ = RealType
     for k in 0..Lt-1:
       for n in 0..src.nbin-1:
-        var re: float = src.data[k + Lt * n].re
+        let re: float = src.data[k + Lt * n].re
         dest.data[k + Lt * n].re = re * re
         dest.data[k + Lt * n].im = 0.0
 
@@ -572,8 +574,8 @@ proc norm2*(srca: Ensemble_t): Ensemble_t =
     dest.typ = RealType
     for k in 0..Lt-1:
       for n in 0..src.nbin-1:
-        var re: float = src.data[k + Lt * n].re
-        var im: float = src.data[k + Lt * n].im
+        let re: float = src.data[k + Lt * n].re
+        let im: float = src.data[k + Lt * n].im
         dest.data[k + Lt * n].re = re * re + im * im
         dest.data[k + Lt * n].im = 0.0
 
@@ -591,9 +593,9 @@ proc arctan2*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
   let src2 = rescaleEnsemDown(src2a)
 
   var dest: Ensemble_t
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
 
   case check_two_ensemble(src1, src2)
   of 0, 2:
@@ -607,10 +609,10 @@ proc arctan2*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
     quit("atan2 requires both ensembles real")
 
   dest.typ = RealType
-  var Lt = MAX(Lt1, Lt2)
+  let Lt = MAX(Lt1, Lt2)
   for k in 0..Lt-1:
-    var k1 = MIN(k, Lt1 - 1)
-    var k2 = MIN(k, Lt2 - 1)
+    let k1 = MIN(k, Lt1 - 1)
+    let k2 = MIN(k, Lt2 - 1)
     for n in 0..num-1:
       result.data[k + Lt * n].re = arctan2(src1.data[k1 + Lt1 * n].re,
                                    src2.data[k2 + Lt2 * n].re)
@@ -619,9 +621,9 @@ proc arctan2*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
 
 proc cmplx*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
   ## Build complex from two real ensembles 
-  var num: int = src1.nbin
-  var Lt1: int = src1.Lt
-  var Lt2: int = src2.Lt
+  let num = src1.nbin
+  let Lt1 = src1.Lt
+  let Lt2 = src2.Lt
 
   case check_two_ensemble(src1, src2)
   of 0, 2:
@@ -635,10 +637,10 @@ proc cmplx*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     quit("cmplx requires both ensembles real")
 
   result.typ = ComplexType
-  var Lt = MAX(Lt1, Lt2)
+  let Lt = MAX(Lt1, Lt2)
   for k in 0..Lt-1:
-    var k1 = MIN(k, Lt1 - 1)
-    var k2 = MIN(k, Lt2 - 1)
+    let k1 = MIN(k, Lt1 - 1)
+    let k2 = MIN(k, Lt2 - 1)
     for n in 0..num-1:
       result.data[k + Lt * n].re = src1.data[k1 + Lt1 * n].re
       result.data[k + Lt * n].im = src2.data[k2 + Lt2 * n].re
@@ -646,9 +648,9 @@ proc cmplx*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
 
 proc timesI*(src: Ensemble_t): Ensemble_t =
   ## Multiply ensemble by I 
-  result = newEnsemble(src)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
+  result  = newEnsemble(src)
+  let num = src.nbin
+  let Lt  = src.Lt
 
   result.typ = ComplexType
   case src.typ
@@ -758,30 +760,34 @@ proc writeEnsemble*(src: Ensemble_t; name: string) =
   writeFile(name, $src)
 
 
-#
-#proc apply_func_ensemble(funcptr: proc (): float; src: Ensemble_t): Ensemble_t =
-#  ## Apply function to ensemble 
-#  result = newEnsemble(src)
-#  var num = src.nbin
-#  var Lt  = src.Lt
-#  var
-#    n: int
-#    k: int
-#  if src.typ != RealType:
-#    quit("only func(real) not supported")
-#  k = 0
-#  while k < Lt:
-#    n = 0
-#    while n < num:
-#      result.data[k + Lt * n].re = (funcptr)(src.data[k + Lt * n].re)
-#      result.data[k + Lt * n].im = 0.0
-#      inc(n)
-#    inc(k)
-#
 
-proc pow*(src: Ensemble_t; val: float): Ensemble_t =
+proc apply_func_ensemble(funcptr: proc (x: float): float; src: Ensemble_t): Ensemble_t =
+  ## Apply function to ensemble 
+  result = newEnsemble(src)
+  let num = src.nbin * src.Lt
+  if src.typ != RealType:
+    quit("only func(real) not supported")
+  var j = 0
+  while j < num:
+    result.data[j].re = funcptr(src.data[j].re)
+    result.data[j].im = 0.0
+    inc(j)
+
+
+proc exp*(src: Ensemble_t): Ensemble_t =
+  ## exp an ensemble
+  result = apply_func_ensemble(exp, src)
+
+
+proc sqrt*(src: Ensemble_t): Ensemble_t =
+  ## sqrt an ensemble
+  result = apply_func_ensemble(math.sqrt, src)
+
+
+proc pow*(src: Ensemble_t; val: SomeNumber): Ensemble_t =
   ## Apply pow(src,const) to ensemble 
   result = newEnsemble(src)
+  let v  = float64(val)
   if src.typ != RealType:
     quit("only func(real) not supported")
 
@@ -792,9 +798,9 @@ proc pow*(src: Ensemble_t; val: float): Ensemble_t =
 
 proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
-  result = newCalcType(RealType, src.Lt)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
+  result  = newCalcType(RealType, src.Lt)
+  let num = src.nbin
+  let Lt  = src.Lt
 
   for k in 0..Lt-1:
     var avg = 0.0
@@ -818,8 +824,8 @@ proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
 proc calc_complex_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
   result = newCalcType(ComplexType, src.Lt)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
+  let num = src.nbin
+  let Lt  = src.Lt
   var avg: Complex
   var err: float
 
@@ -851,9 +857,9 @@ proc calc*(src: Ensemble_t): CalcType_t =
 
 proc shift*(src: Ensemble_t; sh: int): Ensemble_t =
   ## Shift an ensemble in some direction dropping bits from the end 
-  result = newEnsemble(src)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
+  result  = newEnsemble(src)
+  let num = src.nbin
+  let Lt  = src.Lt
   var
     n: int
     k: int
@@ -887,9 +893,9 @@ proc shift*(src: Ensemble_t; sh: int): Ensemble_t =
 
 proc cshift*(src: Ensemble_t; sh: int): Ensemble_t =
   ## Periodic (circular) shift an ensemble in some direction 
-  result = newEnsemble(src)
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
+  result  = newEnsemble(src)
+  let num = src.nbin
+  let Lt  = src.Lt
   var
     n: int
     k: int
@@ -905,13 +911,13 @@ proc cshift*(src: Ensemble_t; sh: int): Ensemble_t =
     inc(n)
 
 
-proc extract*(src: Ensemble_t; elem_i: int; elem_f: int): Ensemble_t =
+proc extract*(src: Ensemble_t; elem_i, elem_f: int): Ensemble_t =
   ## Extract a range of time slices from an ensemble 
   result.typ = src.typ
   result.typ = src.typ
-  var num: int = src.nbin
-  var Lt:  int = src.Lt
-  var dLt: int = elem_f - elem_i
+  let num = src.nbin
+  let Lt  = src.Lt
+  var dLt = elem_f - elem_i
   var
     k: int
     n: int
@@ -934,6 +940,11 @@ proc extract*(src: Ensemble_t; elem_i: int; elem_f: int): Ensemble_t =
       result.data[k + dLt * n].im = src.data[k + elem_i + Lt * n].im
       inc(k)
     inc(n)
+
+
+proc extract*(src: Ensemble_t; elem_i: int): Ensemble_t =
+  ## Extract a single time slice from an ensemble 
+  result = extract(src, elem_i, elem_i)
 
 
 proc concatenate*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
