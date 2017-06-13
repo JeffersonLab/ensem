@@ -671,20 +671,18 @@ proc timesI*(src: Ensemble_t): Ensemble_t =
     quit("something wrong with ensemble: type= " & $src.typ)
 
 
-proc readEnsemble*(name: string): Ensemble_t =
-  ## Read ensemble 
+proc deserializeEnsemble*(input: string): Ensemble_t =
+  ## Parse the string `input` as an ensemble and return it
   var
     num, Lt, ttype, junk, ncol: int
     typ: DataType_t
 
-  # Slurp in the entire contents of the file
-  var fs = newStringStream(readFile(name))
-  if isNil(fs):
-    quit("Error opening file = " & name)
+  # Turn the input string into a stringstream, and read away
+  var fs = newStringStream(input) 
 
   var line = fs.readLine()
   if line == "":
-    quit("Some error reading header in file = " & name)
+    quit("Some error reading header from input string")
   else:
     let ll = splitWhiteSpace(line)
     if ll.len != 5:
@@ -698,10 +696,10 @@ proc readEnsemble*(name: string): Ensemble_t =
 
   typ = cast[DataType_t](ttype)
   if ncol != 1:
-    quit("only support 1 column in " & name)
+    quit("only support 1 column in ensemble deserializer")
 
   if typ != RealType and typ != ComplexType:
-    quit("error in type for file " & name)
+    quit("error in datatype for file")
 
   result = newEnsemble(typ, num, Lt)
 
@@ -713,7 +711,7 @@ proc readEnsemble*(name: string): Ensemble_t =
       k = 0
       while k < Lt: 
         if not fs.readLine(line):
-          quit("error reading file= " & name)
+          quit("error deserializing input string")
         #   echo "parse line= ", line
         let ll = splitWhiteSpace(line)
         if ll.len != 2:
@@ -721,7 +719,7 @@ proc readEnsemble*(name: string): Ensemble_t =
 
         t = parseInt(ll[0])
         if k != t:
-          quit("error reading time slice data from " & name)
+          quit("error reading time slice data from input string: line= " & line)
           
         var dr: float
         discard parseFloat(ll[1], dr)
@@ -733,7 +731,7 @@ proc readEnsemble*(name: string): Ensemble_t =
       k = 0
       while k < Lt: 
         if not fs.readLine(line):
-          quit("error reading file= " & name)
+          quit("error parsing input string = " & line)
         #   echo "parse line= ", line
         let ll = splitWhiteSpace(line)
         if ll.len != 3:
@@ -741,7 +739,7 @@ proc readEnsemble*(name: string): Ensemble_t =
 
         t = parseInt(ll[0])
         if k != t:
-          quit("error reading time slice data from " & name)
+          quit("error parsing time slice data from line = " & line)
           
         var dr, di: float
         discard parseFloat(ll[1], dr)
@@ -756,10 +754,15 @@ proc readEnsemble*(name: string): Ensemble_t =
   fs.close()
 
 
+proc readEnsemble*(filename: string): Ensemble_t =
+  ## Read ensemble from `filename`
+  # Slurp in the entire contents of the file
+  result = deserializeEnsemble(readFile(filename))
+
+
 proc writeEnsemble*(src: Ensemble_t; name: string) =
   ## Write ensemble 
   writeFile(name, $src)
-
 
 
 proc apply_func_ensemble(funcptr: proc (x: float): float; srca: Ensemble_t): Ensemble_t =
