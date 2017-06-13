@@ -75,7 +75,7 @@ proc promote_type(src1: DataType_t; src2: DataType_t): DataType_t =
   elif src1 == ComplexType and src2 == ComplexType:
     result = ComplexType
   else:
-    quit("some unknown types in concatenate")
+    quit("some unknown types in promote_type")
 
 
 proc rescale_factor(num: int; typ: EnsemType_t): float =
@@ -171,6 +171,50 @@ proc newEnsemble*(val: seq[Complex]; nbin: int): Ensemble_t =
     inc(n)
 
 
+proc `[]`*[I: Natural](src: Ensemble_t; i: I): seq[Complex] =
+  ## Return a particular bin
+  if (i < 0) or (i >= src.nbin):
+    quit("Index out-of-range of the ensemble: i= " & $i)
+  let Lt = src.Lt
+  result = newSeq[Complex](Lt)
+  var k = 0
+  while k < Lt:
+    result[k] = src.data[k + i * Lt]
+    inc(k)
+
+
+proc `[]=`*[I: Natural](src: var Ensemble_t; i: I; val: seq[SomeNumber]) =
+  ## Return a particular bin with a `val`. The `src` is expected to be a RealType ensemble.
+  if src.typ != RealType:
+    quit("Expected real type ensemble if assigning to a seq[numbers]")
+  if (i < 0) or (i >= src.nbin):
+    quit("Index out-of-range of the ensemble: i= " & $i)
+  if val.len != src.Lt:
+    quit("Non-commensurate time-extents: val.len = " & $val.len)
+  let Lt = src.Lt
+  var k = 0
+  while k < Lt:
+    src.data[k + i * Lt].re = float64(val[k])
+    src.data[k + i * Lt].im = 0.0
+    inc(k)
+
+
+proc `[]=`*[I: Natural](src: var Ensemble_t; i: I; val: seq[Complex]) =
+  ## Return a particular bin with a `val`. The `src` is expected to be a ComplexType ensemble.
+  if src.typ != ComplexType:
+    quit("Expected complex type ensemble if assigning to a seq[numbers]")
+  if (i < 0) or (i >= src.nbin):
+    quit("Index out-of-range of the ensemble: i= " & $i)
+  if val.len != src.Lt:
+    quit("Non-commensurate time-extents: val.len = " & $val.len)
+  let Lt = src.Lt
+  var k = 0
+  while k < Lt:
+    src.data[k + i * Lt] = val[k]
+    inc(k)
+
+
+
 proc `$`*(z: CalcType_t): string = 
   ## Returns a nice string representation for a calc-ed object
   result = ""
@@ -179,23 +223,25 @@ proc `$`*(z: CalcType_t): string =
   of RealType:
     var k = 0
     while k < Lt:
+      if k > 0: result &= "\n"
       let avg = z.data[k].avg
       let err = z.data[k].err
       if avg.re != 0.0:
         let rat = err / avg.re
-        result &= $k & "   " & $avg.re & " " & $err & "   " & $rat & "\n"
+        result &= $k & "   " & $avg.re & " " & $err & "   " & $rat
       else:
-        result &= $k & "   " & $avg.re & " " & $err & "   " & "\n"
+        result &= $k & "   " & $avg.re & " " & $err
       inc(k)
 
   of ComplexType:
     var k = 0
     while k < Lt:
+      if k > 0: result &= "\n"
       let avg = z.data[k].avg
       let err = z.data[k].err
       var re = formatEng(avg.re, precision=12, trim= true)
       var im = formatEng(avg.im, precision=12, trim= true)
-      result &= $k & "   ( " & re & " , " & im & " )   " & $err & "\n"
+      result &= $k & "   ( " & re & " , " & im & " )   " & $err
       inc(k)
 
   else:
@@ -208,20 +254,20 @@ proc `$`*(src: Ensemble_t): string =
   let num = src.nbin
   let Lt  = src.Lt
 
-  result = $num & " " & $Lt & " " & $int(typ) & " 0 1" & "\n"
+  result = $num & " " & $Lt & " " & $int(typ) & " 0 1"
   case typ
   of RealType:
     for n in 0..num-1:
       for k in 0..Lt-1:
         var re = formatEng(src.data[k + Lt * n].re, precision=12)
-        result &= $k & " " & re & "\n"
+        result &= "\n" & $k & " " & re
 
   of ComplexType:
     for n in 0..num-1:
       for k in 0..Lt-1:   
         var re = formatEng(src.data[k + Lt * n].re, precision=12, trim=true)
         var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=true)
-        result &= $k & " " & re & " " & im & "\n"
+        result &= "\n" & $k & " " & re & " " & im
 
   else:
     quit("something wrong with ensemble: type= " & $typ)
@@ -881,7 +927,6 @@ proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
     err = sqrt(err / float((num - 1) * num))
     result.data[k] = ((avg,0.0), err)
 
-
 proc calc_complex_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
   result = newCalcType(ComplexType, src.Lt)
@@ -1008,25 +1053,18 @@ proc extract*(src: Ensemble_t; elem_i: int): Ensemble_t =
   result = extract(src, elem_i, elem_i)
 
 
-proc concatenate*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
-  ## Concatenate two ensembles 
-  var
-    k: int
-    n: int
-  var
-    Lt: int
-    num: int
-  var typ: DataType_t
+proc merge*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
+  ## Merge two ensembles in the observable time. Number of bins must be the same.
   if src1.nbin != src2.nbin:
-    quit("Ensembles not compatible for concatenation")
+    quit("Ensembles not compatible for merging")
 
-  Lt = src1.Lt + src2.Lt
-  num = src1.nbin
-  typ = promote_type(src1.typ, src2.typ)
+  let Lt = src1.Lt + src2.Lt
+  let num = src1.nbin
+  let typ = promote_type(src1.typ, src2.typ)
   result = newEnsemble(typ, num, Lt)
-  n = 0
+  var n = 0
   while n < num:
-    k = 0
+    var k = 0
     while k < src1.Lt:
       result.data[k + n * Lt].re = src1.data[k + n * src1.Lt].re
       result.data[k + n * Lt].im = src1.data[k + n * src1.Lt].im
@@ -1039,39 +1077,65 @@ proc concatenate*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
     inc(n)
 
 
-#--------------------------------------------------------------------------
-when isMainModule:
-  let Lt   = 4
-  let nbin = 3
-  let src2 = newEnsemble(17.0, nbin, Lt)
-  let src3 = newEnsemble((5.0,7.3), nbin, Lt)
+proc concatMeas*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
+  ## Append two ensembles 
+  if (src1.Lt != src2.Lt) or (src1.typ != src2.typ):
+    quit("Ensembles not compatible for appending")
 
-  # Build a list in time
-  var t = newSeq[float](Lt)
-  for i in 0..Lt-1:
-    t[i] = float(i)
+  let Lt  = src1.Lt
+  let num = src1.nbin + src2.nbin
+  result  = newEnsemble(src1.typ, num, Lt)
+  var n = 0
+  while n < num:
+    var j = 0
+    while j < src1.nbin:
+      var k = 0
+      while k < Lt:
+        result.data[k + n * Lt] = src1.data[k + j * Lt]
+        inc(k)
+      inc(j)
+    j = 0
+    while j < src2.nbin:
+      var k = 0
+      while k < Lt:
+        result.data[k + n * Lt] = src2.data[k + j * Lt]
+        inc(k)
+      inc(j)
+    inc(n)
 
-  let src1 = newEnsemble(t, nbin)
 
-#[
-  echo "src1:"
-  echo src1
-  echo "src2:"
-  echo src2
-  echo "src3:"
-  echo src3
-]#
+proc appendMeas*(src: var Ensemble_t; src2: Ensemble_t) =
+  ## Append an ensemble `src2` onto a `src` ensemble
+  if (src.Lt != src2.Lt) or (src.typ != src2.typ):
+    quit("Ensembles not compatible for appending")
 
-  var fred = src3 * src1
-  echo "fred:"
-  echo fred
+  let Lt  = src.Lt
+  let num = src.nbin
+  src.nbin += src2.nbin
+  src.data.setLen(src.nbin*Lt)
+  var j = num
+  var n = 0
+  while n < src2.nbin:
+    var k = 0
+    while k < Lt:
+      src.data[k + j * Lt] = src2.data[k + n * Lt]
+      inc(k)
+    inc(n)
+    inc(j)
 
-  echo "calc(src2):"
-  echo calc(src2)
 
-  writeEnsemble(fred, "fred.dat")
-  echo "\n\nNow try to read"
-  let foo = readEnsemble("fred.dat")
-  echo "foo:"
-  echo foo
-  assert(foo =~ fred)
+proc dropMeasEnd*(src: Ensemble_t; ndrop: Natural): Ensemble_t =
+  ## Drop the last `ndrop` measurements from the `src` ensemble
+  if src.nbin <= ndrop:
+    quit("Dropping too many measurements: ndrop= " & $ndrop)
+  let Lt  = src.Lt
+  let num = src.nbin - ndrop
+  result = newEnsemble(src.typ, num, Lt)
+  var n = 0
+  while n < num:
+    var k = 0
+    while k < Lt:
+      result.data[k + n * Lt] = src.data[k + n * Lt]
+      inc(k)
+    inc(n)
+
