@@ -2,7 +2,7 @@
 version       = "1.2.1"
 author        = "Robert Edwards"
 description   = "Support for ensemble file format and arithmetic using jackknife/bootstrap propagation of errors"
-license       = "MIT"
+license       = "BSD3"
 srcDir        = "src"
 
 # Dependencies
