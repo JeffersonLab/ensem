@@ -1,12 +1,12 @@
 # Package
-version       = "1.2.1"
+version       = "1.3.0"
 author        = "Robert Edwards"
 description   = "Support for ensemble file format and arithmetic using jackknife/bootstrap propagation of errors"
 license       = "BSD3"
 srcDir        = "src"
 
 # Dependencies
-requires "nim >= 0.17.0"
+requires "nim >= 0.19.0"
 
 # Builds
 task test, "Run the test suite":
