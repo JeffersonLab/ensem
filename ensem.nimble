@@ -1,5 +1,5 @@
 # Package
-version       = "1.3.1"
+version       = "1.3.2"
 author        = "Robert Edwards"
 description   = "Support for ensemble file format and arithmetic using jackknife/bootstrap propagation of errors"
 license       = "BSD3"
