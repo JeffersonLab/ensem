@@ -11,18 +11,18 @@ suite "Test the ensem suite":
     fluct = 2.0
     EPS   = 1.0e-8
 
-  proc buildEnsem(avg: float; max: float): Ensemble_t =
+  proc buildEnsem(avg: float64; max: float64): Ensemble_t =
     ## Build up a random number sequence about an average `avg`
     result = newEnsemble(RealType, nbin, Lt)
     for n in 0..nbin-1:
       # Some simple baseline
-      var dest = newSeq[float](Lt)
+      var dest = newSeq[float64](Lt)
       for t in 0..Lt-1:
         dest[t] = avg + random(max)
 
       result[n] = dest
 
-  proc buildEnsem(avg: Complex; max: float): Ensemble_t =
+  proc buildEnsem(avg: Complex64; max: float64): Ensemble_t =
     ## Build up a random number sequence about an average `avg`
     let re = buildEnsem(avg.re, max)
     let im = buildEnsem(avg.im, max)
@@ -52,7 +52,7 @@ suite "Test the ensem suite":
     require(abs(v.err - 0.4563763365256296) < EPS)
 
   test "Try calc-ing a complex one":
-    let x = buildEnsem((45.0, 80.5), fluct)
+    let x = buildEnsem(complex64(45.0f64, 80.5f64), fluct)
     echo "Calc a complex ensemble:\n", calc(x)
     let xx = $x
     let y = deserializeEnsemble(xx)
@@ -67,7 +67,7 @@ suite "Test the ensem suite":
     require(x =~ y)
 
   test "Multiplication":
-    let src1 = buildEnsem((20.0, 5.6), fluct)
+    let src1 = buildEnsem(complex64(20.0, 5.6), fluct)
     let src2 = buildEnsem(42, fluct)
     let x = src1 * src2
     echo "calc the product of a complex and real ensemble:\n", calc(x)
@@ -76,7 +76,7 @@ suite "Test the ensem suite":
     require(x =~ y)
 
   test "More complicated function":
-    let src1 = buildEnsem((20.0, 5.6), fluct)
+    let src1 = buildEnsem(complex64(20.0, 5.6), fluct)
     let src2 = buildEnsem(4, fluct)
     let x = calc(real(src1 * exp(-src2)))
     echo "calc a more complicated expr:\n", x
