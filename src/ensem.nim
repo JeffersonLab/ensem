@@ -12,21 +12,21 @@ type
     EnsemJackknife = 10,
     EnsemBootstrap = 11
 
-  CalcDataType_t* = tuple[avg: Complex, err: float]
+  CalcDataType_t* = tuple[avg: Complex64, err: float64]
 
   CalcType_t* = object
     data*:       seq[CalcDataType_t]
     typ*:        DataType_t      ## 0 if real and 1 if complex
 
   Ensemble_t* = object
-    data:        seq[Complex]    ## Data in either rescaled or raw format
-    typ:         DataType_t      ## 0 if real and 1 if complex
-    nbin:        int             ## Number of bins, or data samples, configs, etc
-    Lt:          int             ## Number of time-slices of a prop
-#    ens:         EnsemType_t    ## Type of fluctuations for the ensemble
+    data:        seq[Complex64]    ## Data in either rescaled or raw format
+    typ:         DataType_t             ## 0 if real and 1 if complex
+    nbin:        int                    ## Number of bins, or data samples, configs, etc
+    Lt:          int                    ## Number of time-slices of a prop
+#    ens:         EnsemType_t           ## Type of fluctuations for the ensemble
 
 
-proc norm2(x: Complex): float =
+proc norm2(x: Complex64): float =
   result = x.re * x.re + x.im * x.im
 
 proc MAX(x: int; y: int): int =
@@ -85,8 +85,8 @@ proc rescale_factor(num: int; typ: EnsemType_t): float =
       result = -(float(num - 1))
     of EnsemBootstrap:
       result = sqrt(float(num - 1))
-    else:
-      quit("unknown EnsemType= " & $typ)
+#    else:
+#      quit("unknown EnsemType= " & $typ)
 
 
 proc rescaleFactor*(src: Ensemble_t): float =
@@ -98,8 +98,8 @@ proc newEnsemble*(ens: EnsemType_t; typ: DataType_t; nbin: int; Lt: int): Ensemb
   ## Create a new ensemble of some given number of bins and Lt 
   if nbin <= 0 or Lt <= 0:
     quit("invalid input in newEnsemble")
-  result.data = newSeq[Complex](nbin*Lt)
-  if result.data == nil:
+  result.data = newSeq[Complex64](nbin*Lt)
+  if result.data.len == 0:
     quit("malloc returned NULL in newEnsemble")
   result.typ  = typ
   result.nbin = nbin
@@ -121,7 +121,7 @@ proc newEnsemble*(src: Ensemble_t): Ensemble_t =
 proc newEnsemble*(val: SomeNumber; nbin: int; Lt: int): Ensemble_t =
   ## Promote constant to ensemble 
   result = newEnsemble(RealType, nbin, Lt)
-  let v = float64(val)
+  let v = float(val)
   var n = 0
   while n < nbin:
     var k = 0
@@ -152,7 +152,7 @@ proc newEnsemble*(val: seq[SomeNumber]; nbin: int): Ensemble_t =
   while n < nbin:
     var k = 0
     while k < Lt:
-      result.data[k + n * Lt].re = float64(val[k])
+      result.data[k + n * Lt].re = float(val[k])
       result.data[k + n * Lt].im = 0.0
       inc(k)
     inc(n)
@@ -194,7 +194,7 @@ proc `[]=`*[I: Natural](src: var Ensemble_t; i: I; val: seq[SomeNumber]) =
   let Lt = src.Lt
   var k = 0
   while k < Lt:
-    src.data[k + i * Lt].re = float64(val[k])
+    src.data[k + i * Lt].re = float(val[k])
     src.data[k + i * Lt].im = 0.0
     inc(k)
 
@@ -244,8 +244,8 @@ proc `$`*(z: CalcType_t): string =
       result &= $k & "   ( " & re & " , " & im & " )   " & $err
       inc(k)
 
-  else:
-    quit("something wrong with calc type= " & $z.typ)
+#  else:
+#    quit("something wrong with calc type= " & $z.typ)
 
 
 proc `$`*(src: Ensemble_t): string =
@@ -269,8 +269,8 @@ proc `$`*(src: Ensemble_t): string =
         var im = formatEng(src.data[k + Lt * n].im, precision=12, trim=true)
         result &= "\n" & $k & " " & re & " " & im
 
-  else:
-    quit("something wrong with ensemble: type= " & $typ)
+#  else:
+#    quit("something wrong with ensemble: type= " & $typ)
 
 
 
@@ -288,13 +288,22 @@ proc check_two_ensemble(src1, src2: Ensemble_t): int =
     result = -1
 
 
+proc `=~`*[T](x, y: Complex[T]): bool =
+  result = abs(x.re-y.re) < 1e-6 and abs(x.im-y.im) < 1e-6
+
+
+proc `=~`*(src1, src2: CalcDataType_t): bool =
+  ## Compare two ensembles `src1` and `src2` approximately
+  result = (src1.avg =~ src2.avg)
+
+
 proc `=~`*(src1, src2: Ensemble_t): bool =
   ## Compare two ensembles `src1` and `src2` approximately
   result = true
   if check_two_ensemble(src1, src2) != 0: return false
   let num = src1.nbin * src1.Lt
   for j in 0..num-1:
-    let foo: bool = (src1.data[j] =~ src1.data[j])
+    let foo: bool = (src1.data[j] =~ src2.data[j])
     result = result and foo
 
 
@@ -303,14 +312,14 @@ proc rescale_ensemble(src: Ensemble_t; factor: float): Ensemble_t =
   result = newEnsemble(src)
   let num = src.nbin
   let Lt  = src.Lt
-  var avg: Complex
+  var avg: Complex64
 
   for k in 0..Lt-1:
-    avg = (0.0, 0.0)
+    avg = complex64(0.0, 0.0)
     for n in 0..num-1:
       avg += src.data[k + Lt * n]
 
-    avg /= float(num)
+    avg = avg / float(num)
     for n in 0..num-1:
       result.data[k + Lt * n] = avg + (src.data[k + Lt * n] - avg) * factor
 
@@ -329,7 +338,7 @@ proc rescaleEnsemDown(src: Ensemble_t): Ensemble_t =
 proc `+`*(val: SomeNumber; src2: Ensemble_t): Ensemble_t =
   ## Add constant on an ensemble 
   result = newEnsemble(src2)
-  let v  = float64(val)
+  let v  = float(val)
   let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
@@ -413,7 +422,7 @@ proc `-`*(src1: Ensemble_t; src2: Ensemble_t): Ensemble_t =
 proc `*`*(val: SomeNumber; src2: Ensemble_t): Ensemble_t =
   ## Multiply a constant on an ensemble 
   result = newEnsemble(src2)
-  let v  = float64(val)
+  let v  = float(val)
   let Lt = src2.Lt
   for k in 0..Lt-1:
     for n in 0..src2.nbin-1:
@@ -524,8 +533,8 @@ proc `/`*(src1a: Ensemble_t; src2a: Ensemble_t): Ensemble_t =
             src2.data[k2 + Lt2 * n].re -
             src1.data[k1 + Lt1 * n].re * src2.data[k2 + Lt2 * n].im) * denom
 
-    else:
-      quit("something wrong with src2 type: type= " & $src2.typ)
+#    else:
+#      quit("something wrong with src2 type: type= " & $src2.typ)
 
   # Rescale fluctuations upwards for the output
   result = rescaleEnsemUp(dest)
@@ -597,8 +606,8 @@ proc conjugate*(src: Ensemble_t): Ensemble_t =
         result.data[k + Lt * n].re = src.data[k + Lt * n].re
         result.data[k + Lt * n].im = - src.data[k + Lt * n].im
 
-  else:
-    quit("something wrong with src type: type= " & $src.typ)
+#  else:
+#    quit("something wrong with src type: type= " & $src.typ)
 
 
 proc norm2*(srca: Ensemble_t): Ensemble_t =
@@ -626,8 +635,8 @@ proc norm2*(srca: Ensemble_t): Ensemble_t =
         dest.data[k + Lt * n].re = re * re + im * im
         dest.data[k + Lt * n].im = 0.0
 
-  else:
-    quit("something wrong with src type: type= " & $src.typ)
+#  else:
+#    quit("something wrong with src type: type= " & $src.typ)
 
   # Rescale fluctuations upwards for the output
   result = rescaleEnsemUp(dest)
@@ -713,8 +722,8 @@ proc timesI*(src: Ensemble_t): Ensemble_t =
         result.data[k + Lt * n].re = - src.data[k + Lt * n].im
         result.data[k + Lt * n].im = src.data[k + Lt * n].re
 
-  else:
-    quit("something wrong with ensemble: type= " & $src.typ)
+#  else:
+#    quit("something wrong with ensemble: type= " & $src.typ)
 
 
 proc deserializeEnsemble*(input: string): Ensemble_t =
@@ -793,8 +802,8 @@ proc deserializeEnsemble*(input: string): Ensemble_t =
         result.data[k + Lt * n].re = dr
         result.data[k + Lt * n].im = di
         inc(k)
-    else:
-      quit("something wrong with ensemble: type= " & $typ)
+#    else:
+#      quit("something wrong with ensemble: type= " & $typ)
     inc(n)
 
   fs.close()
@@ -895,7 +904,7 @@ proc pow*(srca: Ensemble_t; val: SomeNumber): Ensemble_t =
   ## Apply pow(src,const) to ensemble 
   let src = rescaleEnsemDown(srca)
   var dest = newEnsemble(src)
-  let v  = float64(val)
+  let v  = float(val)
   if src.typ != RealType:
     quit("only func(real) not supported")
 
@@ -925,23 +934,23 @@ proc calc_real_ensemble(src: Ensemble_t): CalcType_t =
       err += diff * diff
 
     err = sqrt(err / float((num - 1) * num))
-    result.data[k] = ((avg,0.0), err)
+    result.data[k] = (complex64(avg,0.0), err)
 
 proc calc_complex_ensemble(src: Ensemble_t): CalcType_t =
   ## Calculate mean, err and err/mean for data 
   result = newCalcType(ComplexType, src.Lt)
   let num = src.nbin
   let Lt  = src.Lt
-  var avg: Complex
+  var avg: Complex64
   var err: float
 
   for k in 0..Lt-1:
-    avg = (0.0, 0.0)
+    avg = complex64(0.0, 0.0)
     err = 0.0
     for n in 0..num-1:
       avg += src.data[k + Lt * n]
 
-    avg /= float(num)
+    avg = avg / float(num)
     for n in 0..num-1:
       let diff = src.data[k + Lt * n] - avg
       err += norm2(diff)
@@ -957,8 +966,8 @@ proc calc*(src: Ensemble_t): CalcType_t =
     result = calc_real_ensemble(src)
   of ComplexType:
     result = calc_complex_ensemble(src)
-  else:
-    quit("something wrong with ensemble: type= " & $src.typ)
+#  else:
+#    quit("something wrong with ensemble: type= " & $src.typ)
 
 
 proc shift*(src: Ensemble_t; sh: int): Ensemble_t =
