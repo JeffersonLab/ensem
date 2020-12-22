@@ -18,7 +18,7 @@ suite "Test the ensem suite":
       # Some simple baseline
       var dest = newSeq[float64](Lt)
       for t in 0..Lt-1:
-        dest[t] = avg + random(max)
+        dest[t] = avg + rand(max)
 
       result[n] = dest
 
